@@ -6,8 +6,8 @@ from datetime import datetime
 import re
 import logging
 import os
-from github import Github
-
+from collections import Counter
+from wordcloud import WordCloud
 
 # Konfigurasi logging
 logging.basicConfig(
@@ -21,17 +21,29 @@ logging.basicConfig(
 
 # Kamus kata positif dan negatif untuk analisis Bahasa Indonesia
 positive_words = ["baik", "puas", "hebat", "bagus", "indah", "terima kasih", "senang", "suka", "luar biasa", "memuaskan", "ramah", "cepat", "mantap", "bagus sekali", "menyenangkan"]
-negative_words = ["buruk", "jelek", "kecewa", "benci", "sedih", "marah", "tidak puas", "payah", "mengecewakan", "parah", "lambat", "sombong", "melelahkan", "tidak ramah", "parah sekali"]
+negative_words = ["buruk", "jelek", "kecewa", "benci", "sedih", "marah", "tidak puas", "payah", "mengecewakan", "parah", "lambat", "sombong", "melelahkan", "tidak ramah", "parah sekali", "gagal", "kesal"]
+
+# Daftar kata untuk menangani negasi
+negation_words = ["tidak", "bukan", "kurang", "jangan", "gagal"]
 
 def preprocess_text(text):
-    text = re.sub(r'[^\w\s]', '', text)
-    text = re.sub(r'\s+', ' ', text).strip().lower()
+    text = re.sub(r'[^\w\s]', '', text)  # Menghapus tanda baca
+    text = re.sub(r'\s+', ' ', text).strip().lower()  # Menghilangkan spasi ganda dan mengubah teks menjadi huruf kecil
     return text
 
 def analyze_sentiment_id(text):
     text = preprocess_text(text)
     positive_score = sum(1 for word in positive_words if word in text)
     negative_score = sum(1 for word in negative_words if word in text)
+
+    # Deteksi negasi dalam teks, yang bisa mengubah sentimen
+    for neg_word in negation_words:
+        if neg_word in text:
+            # Jika terdapat negasi, sentimen positif bisa berubah menjadi negatif
+            if positive_score > negative_score:
+                return "Negatif", negative_score - positive_score
+            else:
+                return "Negatif", negative_score - positive_score
 
     if positive_score > negative_score:
         return "Positif", positive_score - negative_score
@@ -90,9 +102,14 @@ def update_github_log():
     except Exception as e:
         logging.error(f"Gagal memperbarui log di GitHub: {e}")
 
+# Fungsi untuk menghasilkan word cloud
+def generate_word_cloud(text):
+    wordcloud = WordCloud(width=800, height=400, background_color="white").generate(text)
+    return wordcloud
+
 st.set_page_config(page_title="Aplikasi Analisis Sentimen", page_icon="📊", layout="wide")
 
-st.title("📊 Analisis Sentimen Aplikasi Gojek Indonesia")
+st.title("📊 Analisis Sentimen")
 st.markdown("""
 Aplikasi ini memungkinkan Anda untuk menganalisis sentimen teks baik secara manual maupun dari file CSV yang diunggah.
 **Mendukung Bahasa Indonesia!**
@@ -116,6 +133,10 @@ if st.button("Analisis Sentimen"):
         st.write(f"Bahasa yang terdeteksi: **{lang}**")
 
         log_analysis(input_text, sentiment, score, lang)
+
+        # Menampilkan word cloud dari teks
+        wordcloud_image = generate_word_cloud(input_text)
+        st.image(wordcloud_image.to_array(), caption="Word Cloud dari Teks Masukkan", use_column_width=True)
 
         if score != "N/A":
             colors = {"Positif": "green", "Negatif": "red", "Netral": "gray"}
@@ -153,5 +174,11 @@ if uploaded_file is not None:
         ax.set_xlabel("Sentimen")
         ax.set_ylabel("Jumlah")
         st.pyplot(fig)
+
+        # Menampilkan word cloud dari file CSV
+        st.markdown("**Word Cloud dari File CSV:**")
+        common_words_all = ' '.join(df[text_column].dropna()).lower()
+        wordcloud_image_csv = generate_word_cloud(common_words_all)
+        st.image(wordcloud_image_csv.to_array(), caption="Word Cloud dari Data CSV", use_column_width=True)
     else:
         st.warning("Kolom teks tidak dipilih. Pastikan memilih kolom yang berisi teks.")
